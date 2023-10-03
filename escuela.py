@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
+import re  # Módulo para expresiones regulares
 import mysql.connector
 
 # Conexión a la base de datos MySQL
@@ -10,23 +11,40 @@ conexion = mysql.connector.connect(host="localhost", user="root", port="3305", p
 def cargar_datos():
     tree.delete(*tree.get_children())  # Borrar datos existentes en el Treeview
     cursor = conexion.cursor()
-    cursor.execute("SELECT Alumnos.IDALUMNO, Alumnos.NOMBRE, Alumnos.APELLIDO, Alumnos.DNI, Carreras.NOMBRE, EstadoAlumno.NOMBRE FROM Alumnos JOIN Carreras ON Alumnos.IDCARRERA = Carreras.IDCARRERA JOIN EstadoAlumno ON Alumnos.IDESTADOALUMNO = EstadoAlumno.IDESTADOALUMNO WHERE EstadoAlumno.NOMBRE = 'Regular'")
+    cursor.execute(
+        "SELECT Alumnos.IDALUMNO, Alumnos.NOMBRE, Alumnos.APELLIDO, Alumnos.DNI, Carreras.NOMBRE, EstadoAlumno.NOMBRE FROM Alumnos JOIN Carreras ON Alumnos.IDCARRERA = Carreras.IDCARRERA JOIN EstadoAlumno ON Alumnos.IDESTADOALUMNO = EstadoAlumno.IDESTADOALUMNO WHERE EstadoAlumno.NOMBRE = 'Regular'")
     for row in cursor.fetchall():
-        # Convertir el nombre a mayúsculas y luego a minúsculas
-        nombre = row[1].capitalize()
-        apellido = row[2].upper()
+        # Convertir el nombre a mayúscula la primera letra y luego a minúscula
+        nombre = formatear_nombre_apellido(row[1])
+        # Convertir la primera letra del apellido a mayúscula y luego a minúscula
+        apellido = formatear_nombre_apellido(row[2])
         tree.insert("", "end", values=(row[0], nombre, apellido, row[3], row[4], row[5]))
 
 # Función para mostrar todos los alumnos sin importar su estado
 def ver_todos_los_alumnos():
     tree.delete(*tree.get_children())  # Borrar datos existentes en el Treeview
     cursor = conexion.cursor()
-    cursor.execute("SELECT Alumnos.IDALUMNO, Alumnos.NOMBRE, Alumnos.APELLIDO, Alumnos.DNI, Carreras.NOMBRE, EstadoAlumno.NOMBRE FROM Alumnos JOIN Carreras ON Alumnos.IDCARRERA = Carreras.IDCARRERA JOIN EstadoAlumno ON Alumnos.IDESTADOALUMNO = EstadoAlumno.IDESTADOALUMNO")
+    cursor.execute(
+        "SELECT Alumnos.IDALUMNO, Alumnos.NOMBRE, Alumnos.APELLIDO, Alumnos.DNI, Carreras.NOMBRE, EstadoAlumno.NOMBRE FROM Alumnos JOIN Carreras ON Alumnos.IDCARRERA = Carreras.IDCARRERA JOIN EstadoAlumno ON Alumnos.IDESTADOALUMNO = EstadoAlumno.IDESTADOALUMNO")
     for row in cursor.fetchall():
         # Convertir el nombre a mayúsculas y luego a minúsculas
-        nombre = row[1].capitalize()
-        apellido = row[2].upper()
+        nombre = formatear_nombre_apellido(row[1])
+        apellido = formatear_nombre_apellido(row[2])
         tree.insert("", "end", values=(row[0], nombre, apellido, row[3], row[4], row[5]))
+
+# Función para formatear nombre y apellido
+def formatear_nombre_apellido(texto):
+    palabras = texto.split()
+    palabras_formateadas = []
+    for palabra in palabras:
+        if es_valido_nombre_apellido(palabra):
+            palabra_formateada = palabra.capitalize().lower()
+            palabras_formateadas.append(palabra_formateada)
+    return " ".join(palabras_formateadas)
+
+# Función para validar el nombre y apellido (letras, espacios y acentos)
+def es_valido_nombre_apellido(texto):
+    return bool(re.match("^[a-zA-ZáéíóúÁÉÍÓÚüÜ\s]+$", texto))
 
 # Función para llenar el formulario con datos de la grilla
 def llenar_formulario_desde_grilla(event):
@@ -138,8 +156,12 @@ def obtener_id_estado(nombre_estado):
 
 # Función para guardar un nuevo registro de alumno
 def guardar_alumno():
-    nombre = nombre_entry.get().upper()
-    apellido = apellido_entry.get().upper()
+    nombre = nombre_entry.get()
+    apellido = apellido_entry.get()
+    # Validar que el nombre y apellido contengan solo letras, espacios y acentos
+    if not es_valido_nombre_apellido(nombre) or not es_valido_nombre_apellido(apellido):
+        mostrar_alerta("El nombre y el apellido no deben contener números ni caracteres especiales.")
+        return
     dni = dni_entry.get()
     carrera_nombre = carrera_combobox.get()
     estado_alumno_nombre = estado_combobox.get()
@@ -156,7 +178,7 @@ def guardar_alumno():
             return
 
         carrera_id = obtener_id_carrera(carrera_nombre)
-        
+
         # Obtener el ID del estado del alumno seleccionado
         for estado in estados:
             if estado[1] == estado_alumno_nombre:
@@ -164,7 +186,8 @@ def guardar_alumno():
                 break
 
         cursor = conexion.cursor()
-        cursor.execute("INSERT INTO Alumnos (NOMBRE, APELLIDO, DNI, IDCARRERA, IDESTADOALUMNO) VALUES (%s, %s, %s, %s, %s)", (nombre, apellido, dni, carrera_id, estado_alumno_id))
+        cursor.execute("INSERT INTO Alumnos (NOMBRE, APELLIDO, DNI, IDCARRERA, IDESTADOALUMNO) VALUES (%s, %s, %s, %s, %s)",
+                       (nombre, apellido, dni, carrera_id, estado_alumno_id))
         conexion.commit()
         cargar_datos()
         limpiar_formulario()
@@ -212,13 +235,14 @@ def cargar_estados_alumno():
 def mostrar_alerta(mensaje):
     messagebox.showwarning("Alerta", mensaje)
 
-# Función para cambiar el estado del alumno a "libre"
+
+# Función para cambiar el estado del alumno a "eliminado"
 def cambiar_estado_alumno():
     seleccion = tree.selection()
     if not seleccion:
         return
 
-    confirmacion = messagebox.askyesno("Confirmar cambio de estado", "¿Está seguro de eliminar este registro?")
+    confirmacion = messagebox.askyesno("Confirmar eliminación", "¿Está seguro de eliminar este registro?")
     if not confirmacion:
         return
 
@@ -226,11 +250,12 @@ def cambiar_estado_alumno():
     id_alumno = item['values'][0]
 
     cursor = conexion.cursor()
-    cursor.execute("UPDATE Alumnos SET IDESTADOALUMNO = 2 WHERE IDALUMNO = %s", (id_alumno,))
+    cursor.execute("DELETE FROM Alumnos WHERE IDALUMNO = %s", (id_alumno,))
     conexion.commit()
-    
+
     # Eliminar el elemento seleccionado del Treeview
     tree.delete(seleccion)
+
 
 # Crear ventana
 root = tk.Tk()
